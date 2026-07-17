@@ -1,0 +1,93 @@
+"""Small talk configurations.
+
+Defines canonical small talk sub-intent categories and their spelling patterns.
+"""
+
+SMALL_TALK_GROUPS: dict[str, list[str]] = {
+    "how are you": [
+        "how are you",
+        "how r you",
+        "how are u",
+        "how r u",
+        "wassup",
+        "sup",
+        "whats up",
+        "what is up",
+    ],
+    "who are you": [
+        "who are you",
+        "what are you",
+        "what is your name",
+        "whats your name",
+        "who r u",
+        "who u",
+    ],
+    "what is my name": [
+        "what is my name",
+        "whats my name",
+    ],
+    "who built you": [
+        "who built you",
+        "who made you",
+        "who created you",
+        "who owns you",
+        "what company made you",
+        "who built u",
+        "who made u",
+        "who created u",
+    ],
+    "what can you do": [
+        "what can you do",
+        "tell me about yourself",
+        "what can u do",
+        "introduce yourself",
+    ],
+    "help": [
+        "help",
+        "assist me",
+        "can you help",
+        "can u help",
+        "help me",
+    ],
+    "praise": [
+        "good job",
+        "nice",
+        "awesome",
+        "great",
+        "excellent",
+        "cool",
+        "amazing",
+        "perfect",
+        "good work",
+        "well done",
+        "you are awesome",
+        "you're awesome",
+        "ur awesome",
+    ],
+    "acknowledgement": [
+        "ok",
+        "okay",
+        "okk",
+        "kk",
+        "hmm",
+        "hmmm",
+        "hmmmm",
+        "hymm",
+        "alright",
+        "fine",
+    ],
+    "lol": [
+        "haha",
+        "hehe",
+        "lol",
+        "lmao",
+        "hehehe",
+        "hahaha",
+    ],
+    "expression": [
+        "wow",
+        "oh",
+        "oops",
+        "ah",
+    ],
+}

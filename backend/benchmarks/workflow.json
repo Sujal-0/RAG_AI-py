@@ -1,0 +1,10 @@
+[
+  {
+    "query": "What is the workflow for deploying a new model?",
+    "expected_chunks": ["chunk-workflow-1", "chunk-workflow-2"],
+    "expected_intent": "Procedure",
+    "expected_confidence": "HIGH",
+    "expected_citations": 2,
+    "expected_format": "List"
+  }
+]

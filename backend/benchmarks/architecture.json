@@ -1,0 +1,10 @@
+[
+  {
+    "query": "Does the system use RRF or BM25?",
+    "expected_chunks": ["chunk-architecture-1"],
+    "expected_intent": "Architecture",
+    "expected_confidence": "HIGH",
+    "expected_citations": 1,
+    "expected_format": "Text"
+  }
+]

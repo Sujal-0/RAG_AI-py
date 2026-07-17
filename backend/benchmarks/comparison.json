@@ -1,0 +1,10 @@
+[
+  {
+    "query": "Compare Mobiloitte's AI platform with Azure AI.",
+    "expected_chunks": ["chunk-comparison-1"],
+    "expected_intent": "Comparison",
+    "expected_confidence": "HIGH",
+    "expected_citations": 1,
+    "expected_format": "Table"
+  }
+]

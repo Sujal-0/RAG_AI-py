@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="64" fill="#0a0a0a"/>
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <text x="256" y="240" text-anchor="middle" font-family="Arial,sans-serif" font-size="200" font-weight="bold" fill="url(#g)">M</text>
+  <text x="256" y="340" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="600" fill="#ffffff">MOBILOITTE</text>
+  <text x="256" y="390" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="400" fill="url(#g)">AI PLATFORM</text>
+</svg>

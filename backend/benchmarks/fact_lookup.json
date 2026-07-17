@@ -1,0 +1,14 @@
+[
+  {
+    "query": "What is the capital of France?",
+    "expected_chunks": ["chunk-id-123"],
+    "category": "fact_lookup",
+    "required_intent": "Definition"
+  },
+  {
+    "query": "Who is the CEO of Mobiloitte?",
+    "expected_chunks": ["chunk-id-456"],
+    "category": "fact_lookup",
+    "required_intent": "Unknown"
+  }
+]
