@@ -29,17 +29,26 @@ class ExtractiveComposer:
             
         sentences = []
         
+        import re
         # Algorithmic extraction: simply stitch the deduplicated sentences from evidence
         # This guarantees 100% fidelity. The LLM Enhancer will smooth it out later.
         for evidence in context.evidence:
-            chunks_sentences = [s.strip() for s in evidence.text.split(".") if len(s.strip()) > 10]
+            chunks_sentences = [s.strip() for s in re.split(r'[.\n]+', evidence.text) if len(s.strip()) > 10]
             sentences.extend(chunks_sentences)
+            
+        # Prevent document dumps (Task 8)
+        # We allow roughly 1.5x the final word budget in the draft to give the LLM room to summarize,
+        # but we strictly truncate anything beyond that. (Assume ~15 words per sentence)
+        max_draft_sentences = max(10, int((plan.max_words * 1.5) / 15))
+        sentences = sentences[:max_draft_sentences]
             
         draft_content = ".\n".join(sentences) + "."
         
-        # Add basic structural headers if plan dictates
-        if plan.sections and len(plan.sections) > 1:
-            draft_content = f"### {plan.sections[0]}\n\n" + draft_content
+        # Do not prepend structural headers like intent tags to the content 
+        # (This avoids duplicate/robotic prefixes in the UI)
+            
+        if getattr(plan, "greeting_matched", False):
+            draft_content = "Hello! " + draft_content
             
         logger.info(
             "Extractive Draft Complete", 

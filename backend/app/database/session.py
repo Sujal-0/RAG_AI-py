@@ -24,33 +24,44 @@ if sys.platform == "win32":
 
 logger = logging.getLogger("app")
 
-# Ensure PostgreSQL connection uses psycopg async driver
+# Ensure PostgreSQL connection uses asyncpg async driver
 db_url = settings.database.url
 if db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    base_url = db_url.split("?")[0]
+    db_url = base_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if "ssl" in settings.database.url.lower():
+        db_url += "?ssl=require"
 
 db_is_available = False
 
-try:
-    engine = create_async_engine(
-        db_url,
-        pool_size=10,
-        max_overflow=20,
-        pool_pre_ping=True,
-        echo=False,
-    )
-    async_session = async_sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-except Exception as e:
-    logger.error(f"Failed to create async database engine: {e}")
-    raise
+engine = None
+async_session = None
+
+def get_engine():
+    global engine, async_session
+    if engine is None:
+        from sqlalchemy.pool import NullPool
+        try:
+            engine = create_async_engine(
+                db_url,
+                poolclass=NullPool,
+                pool_pre_ping=True,
+                echo=False,
+            )
+            async_session = async_sessionmaker(
+                bind=engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create async database engine: {e}")
+            raise
+    return engine
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Dependency injector yielding a database session context."""
+    get_engine()
     async with async_session() as session:
         try:
             yield session
@@ -66,7 +77,8 @@ async def init_database() -> None:
     Raises an error gracefully if the connection fails.
     """
     try:
-        async with engine.begin() as conn:
+        eng = get_engine()
+        async with eng.begin() as conn:
             # 1. Enable pgvector and uuid extensions
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             await conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'))

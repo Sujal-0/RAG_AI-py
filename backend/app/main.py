@@ -137,10 +137,18 @@ async def lifespan(app: FastAPI):
         _get_indexed_vocabulary()
         warmup_items += 3
         
-        # 2. Provider Health Check
-        from app.engines.providers import ProviderManager
+        # 2. Provider Health Check & Legacy Providers
+        from app.engines.providers_legacy import ProviderManager
         pm = ProviderManager()
         warmup_items += len(pm.providers)
+        
+        # 3. Pre-load heavy ML models (Reranker) in a thread so they don't block requests
+        try:
+            from app.engines.providers.factories import RerankerProviderFactory
+            await asyncio.to_thread(RerankerProviderFactory.get_provider)
+            warmup_items += 1
+        except Exception as e:
+            logger.warning(f"Failed to pre-load Reranker model: {e}")
         
         # 3. Query expansion
         try:
@@ -187,8 +195,9 @@ async def lifespan(app: FastAPI):
         
     logger.info("Backend READY.")
 
+    print(">>> [main] BEFORE YIELD")
     yield
-
+    print(">>> [main] AFTER YIELD")
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application.

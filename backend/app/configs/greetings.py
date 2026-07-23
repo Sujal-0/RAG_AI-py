@@ -68,6 +68,21 @@ GREETING_GROUPS: dict[str, list[str]] = {
     "konnichiwa": ["konnichiwa", "konichiwa"],
 }
 
+# Assistant Identity Fast Path (Task 4)
+IDENTITY_GROUPS = {
+    "identity": [
+        "who are you",
+        "what is your name",
+        "who built you",
+        "what are you",
+        "are you ai",
+        "are you chatgpt",
+        "what can you do",
+        "tell me about yourself",
+        "your identity"
+    ]
+}
+
 # Removable greeting suffixes/names (all lowercase)
 NOISE_TOKENS: set[str] = COMMON_NOISE_SUFFIXES | {
     "raj",

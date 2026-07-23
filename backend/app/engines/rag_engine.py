@@ -220,7 +220,7 @@ class RAGEngine(BaseEngine):
 
     def __init__(self, generator: AnswerGenerator | None = None):
         if generator is None:
-            from app.engines.providers import ProviderManager
+            from app.engines.providers_legacy import ProviderManager
             self.generator = ProviderManager()
         else:
             self.generator = generator

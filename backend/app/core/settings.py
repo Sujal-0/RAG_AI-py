@@ -94,8 +94,7 @@ class RetrievalSettings(BaseModel):
     retrieval_timeout: int
     maximum_context_tokens: int
     maximum_candidate_chunks: int
-    minimum_chunk_size: int
-    maximum_chunk_size: int
+    minimum_chunk_size: int = Field(10, description="Reject chunks with fewer words")
     retry_counts: int
     
     # Neighbors
@@ -243,13 +242,13 @@ class Settings(BaseSettings):
     RETRIEVAL_RRF_CONSTANT: int = 60
     
     RETRIEVAL_MINIMUM_SIMILARITY: float = 0.3
-    RETRIEVAL_WEAK_THRESHOLD: float = -5.0
+    RETRIEVAL_WEAK_THRESHOLD: float = 0.0
     RETRIEVAL_STRONG_THRESHOLD: float = 2.0
     RETRIEVAL_QUERY_REWRITE_THRESHOLD: int = 4
     RETRIEVAL_FOLLOWUP_DETECTION_THRESHOLD: int = 3
     
     RETRIEVAL_RERANKER_PROVIDER: str = "sentence_transformer"
-    RETRIEVAL_RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RETRIEVAL_RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     RETRIEVAL_ENTITY_PROVIDER: str = "spacy"
     RETRIEVAL_KEYWORD_PROVIDER: str = "heuristic"
     RETRIEVAL_REWRITE_PROVIDER: str = "heuristic"
@@ -259,7 +258,7 @@ class Settings(BaseSettings):
     RETRIEVAL_TIMEOUT: int = 30
     RETRIEVAL_MAXIMUM_CONTEXT_TOKENS: int = 4000
     RETRIEVAL_MAXIMUM_CANDIDATE_CHUNKS: int = 100
-    RETRIEVAL_MINIMUM_CHUNK_SIZE: int = 50
+    RETRIEVAL_MINIMUM_CHUNK_SIZE: int = 10
     RETRIEVAL_MAXIMUM_CHUNK_SIZE: int = 1500
     RETRIEVAL_RETRY_COUNTS: int = 3
     

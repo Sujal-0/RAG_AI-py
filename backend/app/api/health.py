@@ -15,6 +15,7 @@ def health_check() -> dict[str, str]:
     Returns:
         Dictionary with status, project name, and version.
     """
+    print(">>> [health_check] Incoming health request")
     return {
         "status": "running",
         "project": "Mobiloitte AI Platform",

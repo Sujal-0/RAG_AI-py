@@ -6,19 +6,21 @@ retrieval set that benefits from both exact keyword matches and semantic meaning
 
 import logging
 from typing import Any
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.engines.query.query_analyzer import NormalizedQuery
 from app.engines.query.strategy_engine import RetrievalStrategy
-from app.retrievers.keyword_retriever import KeywordRetriever
-from app.retrievers.dense_retriever import DenseRetriever
 from app.core.settings import settings
+from app.database.models import DocumentChunk
+from app.embeddings.embedding_service import EmbeddingService
+from app.engines.providers.factories import RerankerProviderFactory
 
 logger = logging.getLogger("app")
 
-
 class HybridRetriever:
-    """Executes Dense and Sparse retrieval and fuses the results."""
+    """Executes ultra-fast pgvector HNSW direct query and Cross-Encoder reranking."""
 
     @classmethod
     async def retrieve(
@@ -28,63 +30,64 @@ class HybridRetriever:
         rewritten_query: str,
         strategy: RetrievalStrategy,
         metadata_filters: list,
-        top_k: int = 40
+        top_k: int = 15
     ) -> list[dict[str, Any]]:
-        """Run Hybrid Retrieval with RRF."""
+        """Run pgvector HNSW with Cross-Encoder reranking."""
         
         logger.info(
-            "Executing Hybrid Retrieval",
+            "Executing HNSW + Cross-Encoder Fast-Fetch",
             extra={"structured_log": True, "stage": "HybridRetriever"}
         )
 
-        # Execute both retrievers (ideally concurrently using asyncio.gather)
-        import asyncio
-        sparse_task = KeywordRetriever.retrieve(session, original_query, strategy, metadata_filters, top_k)
-        dense_task = DenseRetriever.retrieve(session, rewritten_query, strategy, metadata_filters, top_k)
+        # 1. Generate query embedding
+        query_vector = await asyncio.to_thread(EmbeddingService.generate_embedding, rewritten_query)
         
-        sparse_results, dense_results = await asyncio.gather(sparse_task, dense_task)
+        # 2. PGVector HNSW Cosine Similarity Lookup
+        stmt = (
+            select(DocumentChunk)
+            .order_by(DocumentChunk.embedding_vector.cosine_distance(query_vector))
+            .limit(top_k)
+        )
         
-        return cls._fuse_results_rrf(sparse_results, dense_results, top_k)
+        result = await session.execute(stmt)
+        chunks = result.scalars().all()
+        
+        retrieved_chunks = [
+            {
+                "chunk_id": str(c.id),
+                "chunk": c.text,
+                "metadata": c.chunk_metadata,
+                "document_id": c.chunk_metadata.get("document_id", ""),
+                "dense_score": 1.0, # Placeholder for downstream compatibility
+                "db_chunk": c
+            } for c in chunks
+        ]
+        
+        if not retrieved_chunks:
+            return []
 
-    @classmethod
-    def _fuse_results_rrf(
-        cls, 
-        sparse_results: list[dict[str, Any]], 
-        dense_results: list[dict[str, Any]],
-        top_k: int
-    ) -> list[dict[str, Any]]:
-        """Apply Reciprocal Rank Fusion."""
+        # 3. Cross-Encoder Reranking
+        reranker = RerankerProviderFactory.get_provider()
+        reranked_chunks = await asyncio.to_thread(
+            reranker.rerank,
+            rewritten_query, 
+            retrieved_chunks, 
+            top_k
+        )
         
-        fused_scores = {}
-        chunk_map = {}
+        # 4. Truncation
+        baseline = settings.retrieval.minimum_similarity
         
-        # Rank sparse
-        for rank, item in enumerate(sparse_results):
-            cid = item["chunk_id"]
-            chunk_map[cid] = item["chunk"]
-            fused_scores[cid] = fused_scores.get(cid, 0.0) + (1.0 / (settings.retrieval.rrf_constant + rank + 1))
-            
-        # Rank dense
-        for rank, item in enumerate(dense_results):
-            cid = item["chunk_id"]
-            if cid not in chunk_map:
-                chunk_map[cid] = item["chunk"]
-            fused_scores[cid] = fused_scores.get(cid, 0.0) + (1.0 / (settings.retrieval.rrf_constant + rank + 1))
-            
-        # Sort by fused score descending
-        sorted_cids = sorted(fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True)
+        valid_chunks = [
+            c for c in reranked_chunks 
+            if c.get("rerank_score", c.get("score", 0.0)) >= baseline
+        ]
         
-        final_results = []
-        for cid in sorted_cids[:top_k]:
-            final_results.append({
-                "chunk": chunk_map[cid],
-                "hybrid_score": fused_scores[cid],
-                "chunk_id": cid
-            })
-            
+        final_evidence = valid_chunks[:4]
+        
         logger.info(
-            "Hybrid Fusion Complete",
-            extra={"structured_log": True, "stage": "HybridRetriever", "fused_count": len(final_results)}
+            "Hybrid Fast-Fetch Complete",
+            extra={"structured_log": True, "stage": "HybridRetriever", "returned_count": len(final_evidence)}
         )
             
-        return final_results
+        return final_evidence

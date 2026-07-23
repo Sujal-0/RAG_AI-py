@@ -37,7 +37,10 @@ class MetadataFilterEngine:
             # e.g. DocumentChunk.chunk_metadata.op("->>")("chunk_type").in_(strategy.target_chunk_types)
             # However, because chunk_type wasn't explicitly added as a column, we query JSONB.
             
-            chunk_type_filter = DocumentChunk.chunk_metadata["chunk_type"].astext.in_(strategy.target_chunk_types)
+            chunk_type_filter = or_(
+                DocumentChunk.chunk_metadata["chunk_type"].astext.in_(strategy.target_chunk_types),
+                DocumentChunk.chunk_metadata["chunk_type"].astext.is_(None)
+            )
             filters.append(chunk_type_filter)
 
         # 3. Exact Metadata requirement

@@ -76,6 +76,11 @@ class QueryAnalyzer:
         text = text.replace("’", "'").replace("‘", "'")
         # Remove trailing question marks for cleaner downstream matching
         text = text.rstrip("?")
+        
+        # Normalize repetitive characters in common greetings (Task 2)
+        text = re.sub(r"\b(h)(i+)\b", "hi", text)         # hii, hiii -> hi
+        text = re.sub(r"\b(h)(e+)(y+)\b", "hey", text)      # heyy, heyyy -> hey
+        text = re.sub(r"\b(h)(e+)(l+)(o+)\b", "hello", text) # hellooo -> hello
         return text
 
     @classmethod

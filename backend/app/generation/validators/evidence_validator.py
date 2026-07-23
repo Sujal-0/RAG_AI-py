@@ -7,7 +7,7 @@ evidence before drafting begins.
 import logging
 from typing import Protocol
 
-from app.generation.dto.dtos import GenerationContext, ExtractiveDraft, CitationMap
+from app.generation.dto.dtos import GenerationContext, ExtractiveDraft, CitationMap, ResponsePlan
 
 logger = logging.getLogger("app")
 
@@ -21,10 +21,14 @@ class CoverageValidator:
     """Ensures the context has enough density to answer the query."""
     
     @classmethod
-    def validate(cls, context: GenerationContext) -> GenerationContext:
+    def validate(cls, context: GenerationContext, plan: ResponsePlan) -> GenerationContext:
         if not context.evidence:
+            if plan.max_chunks == 0:
+                # Fast paths like Greetings don't require evidence
+                return context
             raise ValueError("Insufficient evidence coverage: No evidence retrieved.")
-        if context.total_tokens < 50:
+            
+        if context.total_tokens < 50 and plan.max_chunks > 0:
             logger.warning("Very low evidence coverage detected.")
         return context
 
@@ -55,11 +59,11 @@ class EvidenceValidator:
     """Primary entrypoint for filtering weak chunks before drafting."""
     
     @classmethod
-    def validate(cls, context: GenerationContext) -> GenerationContext:
+    def validate(cls, context: GenerationContext, plan: ResponsePlan) -> GenerationContext:
         logger.info("Validating Evidence", extra={"structured_log": True, "stage": "EvidenceValidator"})
         
         # Sequentially apply validators
-        context = CoverageValidator.validate(context)
+        context = CoverageValidator.validate(context, plan)
         context = FactValidator.validate(context)
         
         # Additional baseline checks

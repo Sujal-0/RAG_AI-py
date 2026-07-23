@@ -26,7 +26,7 @@ class GeminiEnhancer(BaseLLMEnhancer):
         try:
             # Placeholder for actual google-genai call
             # response = await client.models.generate_content_async(model=..., contents=...)
-            return f"[Gemini Polished] {draft.content}"
+            return draft.content
         except Exception as e:
             logger.error(f"Gemini polish failed: {e}. Falling back to draft.")
             return draft.content
@@ -37,7 +37,7 @@ class OpenAIEnhancer(BaseLLMEnhancer):
     
     async def polish(self, draft: ExtractiveDraft, prompt: PromptBundle, plan: ResponsePlan) -> str:
         logger.info("Polishing via OpenAI", extra={"structured_log": True, "stage": "LLMEnhancer"})
-        return f"[OpenAI Polished] {draft.content}"
+        return draft.content
 
 
 class LLMEnhancerProviderFactory:

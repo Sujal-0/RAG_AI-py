@@ -20,6 +20,9 @@ class GenerationEvidence:
     source_chunk: DocumentChunk
     relevance_score: float
     token_count: int
+    semantic_score: float = 0.0
+    rerank_score: float = 0.0
+    final_score: float = 0.0
 
 
 @dataclass
@@ -28,15 +31,27 @@ class GenerationContext:
     evidence: list[GenerationEvidence]
     total_tokens: int
     is_compressed: bool = False
+    original_tokens: int = 0
+    chunks_removed: int = 0
+    sentences_removed: int = 0
 
 
 @dataclass
 class ResponsePlan:
     """The structural blueprint for the final response."""
+    intent: str
     format_type: str  # e.g., Definition, Comparison, Markdown Table
     sections: list[str]
+    token_budget: int
+    max_words: int
+    max_chunks: int
+    temperature: float
     requires_citations: bool
+    stream: bool
+    compression_level: str
+    allow_markdown: bool
     requires_safety_disclaimer: bool
+    greeting_matched: bool = False
 
 
 @dataclass

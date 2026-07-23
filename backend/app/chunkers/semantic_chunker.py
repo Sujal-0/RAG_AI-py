@@ -24,9 +24,12 @@ class ChunkPayload(BaseModel):
     heading: str | None = None
     section: str | None = None
     subsection: str | None = None
+    parent_section: str | None = None
+    child_section: str | None = None
     
     # Global Metadata
     document_id: uuid.UUID | None = None
+    document_name: str | None = None
     version_id: uuid.UUID | None = None
     document_type: str | None = None
     language: str | None = None
@@ -60,69 +63,59 @@ class SemanticChunker:
     def count_tokens(self, text: str) -> int:
         return len(self.encoder.encode(text))
 
-    def _identify_block_type(self, block: str) -> str:
-        """Identify the markdown block type to prevent splitting."""
-        block_clean = block.strip()
-        if block_clean.startswith("```") and block_clean.endswith("```"):
-            return "code_block"
-        if "|" in block_clean and "-|-" in block_clean.replace(" ", ""):
-            return "table"
-        if re.match(r"^(?:\d+\.|\-|\*)\s", block_clean):
-            return "list"
-        if re.match(r"^#{1,6}\s", block_clean):
-            return "heading"
-        return "text"
-
     def chunk_document(
         self, 
         pages: list[str], 
         document_name: str = "",
         document_metadata: dict[str, Any] | None = None
     ) -> list[ChunkPayload]:
-        """Parse pages into semantic chunks respecting Markdown blocks."""
+        """Parse pages into semantic chunks respecting Markdown blocks via AST."""
+        from markdown_it import MarkdownIt
         doc_meta = document_metadata or {}
         
         chunks = []
         full_doc_text = "\n\n".join(pages)
+        lines = full_doc_text.splitlines()
         
-        current_heading = "General"
-        current_section = "General"
+        md = MarkdownIt()
+        tokens = md.parse(full_doc_text)
+        
+        merged_blocks = []
+        for token in tokens:
+            if token.level != 0:
+                continue
+                
+            if token.type in (
+                "heading_open", "paragraph_open", "table_open", 
+                "bullet_list_open", "ordered_list_open", "blockquote_open", 
+                "fence", "html_block", "hr"
+            ):
+                if not token.map:
+                    continue
+                start_line, end_line = token.map
+                block_text = "\n".join(lines[start_line:end_line])
+                
+                b_type = "text"
+                if token.type == "table_open":
+                    b_type = "table"
+                elif token.type == "fence":
+                    b_type = "code_block"
+                elif "list" in token.type:
+                    b_type = "list"
+                elif token.type == "heading_open":
+                    b_type = "heading"
+                    
+                merged_blocks.append((block_text, b_type))
+
+        current_heading = None
+        current_section = None
         current_subsection = None
+        current_parent_section = None
+        current_child_section = None
         
         chunk_idx = 0
         global_para_index = 0
         
-        # We will split the entire document roughly by double newlines,
-        # but we must ensure we don't split INSIDE a code block or table.
-        # A safer approach is to regex split, then merge blocks that belong together.
-        
-        # For simplicity, we split by double newlines and classify each block
-        raw_blocks = re.split(r'\n{2,}', full_doc_text)
-        
-        merged_blocks = []
-        in_code_block = False
-        temp_block = []
-        
-        for raw in raw_blocks:
-            if not raw.strip():
-                continue
-                
-            if "```" in raw:
-                quotes_count = raw.count("```")
-                if quotes_count % 2 != 0:
-                    in_code_block = not in_code_block
-                    
-            if in_code_block:
-                temp_block.append(raw)
-            else:
-                if temp_block:
-                    temp_block.append(raw)
-                    merged_blocks.append("\n\n".join(temp_block))
-                    temp_block = []
-                else:
-                    merged_blocks.append(raw)
-
-        # Now we process merged blocks
         current_chunk_text = []
         current_tokens = 0
         chunk_type_flag = "text"
@@ -144,6 +137,9 @@ class SemanticChunker:
                 heading=current_heading,
                 section=current_section,
                 subsection=current_subsection,
+                parent_section=current_parent_section,
+                child_section=current_child_section,
+                document_name=document_name,
                 document_type=doc_meta.get("document_type", "General"),
                 language=doc_meta.get("language", "en"),
                 topic=doc_meta.get("topics", ["General"])[0] if doc_meta.get("topics") else "General",
@@ -162,8 +158,7 @@ class SemanticChunker:
             current_tokens = 0
             chunk_type_flag = "text"
 
-        for block in merged_blocks:
-            b_type = self._identify_block_type(block)
+        for block, b_type in merged_blocks:
             b_tokens = self.count_tokens(block)
             global_para_index += 1
             
@@ -173,15 +168,23 @@ class SemanticChunker:
                 h_level = len(block) - len(block.lstrip("#"))
                 h_text = block.strip("# ").strip()
                 if h_level == 1:
-                    current_heading = h_text
                     current_section = h_text
+                    current_parent_section = h_text
                     current_subsection = None
+                    current_child_section = None
+                    current_heading = None
                 elif h_level == 2:
                     current_section = h_text
+                    current_parent_section = h_text
                     current_subsection = None
-                else:
+                    current_child_section = None
+                    current_heading = None
+                elif h_level == 3:
                     current_subsection = h_text
-                # Don't make a chunk out of just a heading
+                    current_child_section = h_text
+                    current_heading = None
+                else:
+                    current_heading = h_text
                 current_chunk_text.append(block)
                 current_tokens += b_tokens
                 continue
@@ -194,7 +197,7 @@ class SemanticChunker:
                 
                 # If it's standard text, we can split it. If it's a table/code, we MUST keep it together.
                 if b_type == "text":
-                    # Fallback sentence splitter for massive paragraphs
+                    # Fallback sentence splitter for massive text paragraphs
                     sentences = re.split(r"(?<=[.!?])\s+", block)
                     for s in sentences:
                         s_tokens = self.count_tokens(s)
@@ -203,10 +206,12 @@ class SemanticChunker:
                         current_chunk_text.append(s)
                         current_tokens += s_tokens
                 else:
-                    # Unsplittable block (table/code/list)
+                    # Atomic protection for tables/code/lists
                     current_chunk_text.append(block)
                     current_tokens += b_tokens
                     chunk_type_flag = b_type
+                    if b_type == "table":
+                        current_chunk_text.append("\n\n<!-- WARNING: MAXIMUM TOKEN LENGTH BREACHED FOR TABLE -->")
                     flush_chunk()
                 continue
                 

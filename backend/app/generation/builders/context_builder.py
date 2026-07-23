@@ -32,16 +32,26 @@ class ContextBuilder:
             )
         )
         
+        import re
+        
         for item in sorted_raw:
             chunk = item["chunk"]
             
+            # Extract first 4 sentences instead of dumping raw document text (Task 11)
+            raw_text = chunk.text
+            sentences = re.split(r'(?<=[.!?]) +', raw_text)
+            extracted_text = " ".join(sentences[:4])
+            
             evidence = GenerationEvidence(
                 id=str(chunk.id),
-                text=chunk.text,
+                text=extracted_text,
                 metadata=chunk.chunk_metadata,
                 source_chunk=chunk,
-                relevance_score=item.get("hybrid_score", item.get("rerank_score", 0.0)),
-                token_count=chunk.token_count
+                relevance_score=item.get("hybrid_score", item.get("rerank_score", item.get("dense_score", 0.0))),
+                token_count=chunk.token_count,
+                semantic_score=item.get("dense_score", 0.0),
+                rerank_score=item.get("rerank_score", 0.0),
+                final_score=item.get("hybrid_score", item.get("rerank_score", item.get("dense_score", 0.0)))
             )
             
             evidence_list.append(evidence)

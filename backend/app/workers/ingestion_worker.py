@@ -14,7 +14,7 @@ from app.chunkers.semantic_chunker import SemanticChunker
 from app.cleaners.text_cleaners import TextCleaner
 from app.extractors.metadata_extractor import DocumentUnderstandingEngine
 from app.database.models import DocumentVersion, Document
-from app.database.session import async_session
+from app.database import session as db_session
 from app.embeddings.embedding_service import EmbeddingService
 from app.extractors.document_extractors import (
     DOCXExtractor,
@@ -52,7 +52,8 @@ class IngestionWorker:
             "total_processing_time_ms": 0,
         }
 
-        async with async_session() as session:
+        db_session.get_engine()
+        async with db_session.async_session() as session:
             try:
                 # 1. Validation & Loading
                 logger.info("Worker started: validation phase")
@@ -136,8 +137,48 @@ class IngestionWorker:
                 )
                 await session.commit()
                 
-                chunker = SemanticChunker(target_tokens=350, overlap_percent=0.15)
-                chunks = chunker.chunk_document(cleaned_pages, document_name=filename, document_metadata=document_metadata)
+                try:
+                    from langchain_text_splitters import RecursiveCharacterTextSplitter
+                except ImportError:
+                    from langchain.text_splitter import RecursiveCharacterTextSplitter
+                
+                # Initialize the production splitter
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=800,
+                    chunk_overlap=150,
+                    separators=["\n\n", "\n", ".", " ", ""]
+                )
+
+                # Extract raw text from PDF
+                raw_text = "\n\n".join(cleaned_pages)
+                
+                # Force chunking through the splitter
+                docs = text_splitter.create_documents([raw_text])
+                
+                from app.chunkers.semantic_chunker import ChunkPayload
+                import hashlib
+                
+                chunks = []
+                for idx, doc in enumerate(docs):
+                    text_content = doc.page_content
+                    chunk_hash = hashlib.sha256(text_content.encode("utf-8")).hexdigest()
+                    payload = ChunkPayload(
+                        chunk_index=idx,
+                        page_number=1,
+                        paragraph_number=idx,
+                        text=text_content,
+                        char_range_start=0,
+                        char_range_end=len(text_content),
+                        token_count=len(text_content.split()),
+                        hash=chunk_hash,
+                        document_id=version.document_id,
+                        document_name=filename,
+                        version_id=version_id,
+                        document_type="document",
+                        topic=document_metadata.get("title", filename)
+                    )
+                    chunks.append(payload)
+                
                 if not chunks:
                     raise ValueError("Document contains no valid semantic content after cleaning.")
                     
@@ -165,7 +206,15 @@ class IngestionWorker:
                     
                     enriched_text = f"{metadata_prefix}\n\n{c.text}"
                     chunk_texts_for_embedding.append(enriched_text)
-                embeddings = EmbeddingService.generate_embeddings(chunk_texts_for_embedding)
+                
+                # Batch processing to prevent OOM
+                embeddings = []
+                batch_size = 100
+                for i in range(0, len(chunk_texts_for_embedding), batch_size):
+                    batch = chunk_texts_for_embedding[i:i + batch_size]
+                    batch_embeddings = EmbeddingService.generate_embeddings(batch)
+                    embeddings.extend(batch_embeddings)
+                    
                 metrics["embedding_time_ms"] = int((time.time() - start_phase) * 1000)
 
                 # 6. Database Storage
@@ -201,8 +250,7 @@ class IngestionWorker:
                 version.embedding_time_ms = metrics["embedding_time_ms"]
                 version.database_time_ms = metrics["database_time_ms"]
 
-                # Perform pgvector index optimization hook
-                await session.execute(text("ANALYZE document_chunks;"))
+                # (ANALYZE document_chunks removed to prevent database thrashing)
 
                 # Verification: ensure chunks are actually searchable
                 from sqlalchemy import func

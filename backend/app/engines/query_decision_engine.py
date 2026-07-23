@@ -18,7 +18,7 @@ import time
 import logging
 import difflib
 from app.configs.knowledge import KNOWLEDGE_DATABASE
-from app.configs.greetings import GREETING_GROUPS
+from app.configs.greetings import GREETING_GROUPS, IDENTITY_GROUPS
 from app.configs.goodbyes import GOODBYE_GROUPS
 from app.configs.thanks import THANKS_GROUPS
 from app.configs.small_talk import SMALL_TALK_GROUPS
@@ -299,6 +299,7 @@ class QueryDecisionEngine(BaseEngine):
         has_goodbye = False
         has_thanks = False
         has_small_talk = False
+        has_identity = False
 
         # Greeting detection
         greet_match = find_longest_match_phrase(working_query, GREETING_GROUPS)
@@ -336,6 +337,16 @@ class QueryDecisionEngine(BaseEngine):
             has_small_talk = True
             context.metadata["has_small_talk"] = True
             phrase, canonical_small_talk, matched_indices = small_talk_match
+            words = clean_term(working_query).split()
+            remaining_words = [words[i] for i in range(len(words)) if i not in matched_indices]
+            working_query = " ".join(remaining_words)
+
+        # Identity detection
+        identity_match = find_longest_match_phrase(working_query, IDENTITY_GROUPS)
+        if identity_match:
+            has_identity = True
+            context.metadata["has_identity"] = True
+            phrase, canonical_identity, matched_indices = identity_match
             words = clean_term(working_query).split()
             remaining_words = [words[i] for i in range(len(words)) if i not in matched_indices]
             working_query = " ".join(remaining_words)
@@ -396,7 +407,9 @@ class QueryDecisionEngine(BaseEngine):
 
         if not remaining_tokens:
             # It was a pure conversational query (no core query left)
-            if has_greeting:
+            if has_identity:
+                decision = "AssistantIdentity"
+            elif has_greeting:
                 decision = "GREETING"
             elif has_goodbye:
                 decision = "GOODBYE"
@@ -418,7 +431,9 @@ class QueryDecisionEngine(BaseEngine):
         # Check if remainder is gibberish
         remainder_str = " ".join(remaining_tokens)
         if is_probable_gibberish(remainder_str):
-            if has_greeting:
+            if has_identity:
+                decision = "AssistantIdentity"
+            elif has_greeting:
                 decision = "GREETING"
             elif has_goodbye:
                 decision = "GOODBYE"

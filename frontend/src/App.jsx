@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { MessageSquare, Folder, Settings, Wrench, RefreshCw, X, Minimize2, Maximize2, ChevronLeft, Building, Shield, Globe, Briefcase, Paperclip } from "lucide-react";
 import LandingPage from "./components/LandingPage";
 
@@ -341,6 +342,7 @@ function App() {
           query: queryText,
           sessionId: "sess-manual-chat-test-1234",
           similarityThreshold: similarityThreshold,
+          stream: true,
         }),
       });
 
@@ -348,34 +350,59 @@ function App() {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const botMessageId = Date.now() + 1;
+      const botMessage = {
+        sender: "bot",
+        text: "",
+        id: botMessageId,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        debugInfo: null,
+      };
 
-      if (data && data.answer) {
-        const botMessage = {
-          sender: "bot",
-          text: data.answer,
-          id: Date.now() + 1,
-          timestamp: new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          debugInfo: {
-            intent: data.intent,
-            displayIntent: data.displayIntent,
-            confidence: data.confidence,
-            normalizedQuery: data.normalizedQuery,
-            resolvedQuery: data.resolvedQuery,
-            matchedKeywords: data.matchedKeywords,
-            requestId: data.requestId,
-            timestamp: data.timestamp,
-            trace: data.trace,
-            metadata: data.metadata,
-          },
-        };
+      setMessages((prev) => [...prev, botMessage]);
 
-        setMessages((prev) => [...prev, botMessage]);
-      } else {
-        throw new Error("Invalid response schema from backend.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let accumulatedResponse = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.substring(6).trim();
+            if (dataStr === "[DONE]") continue;
+            
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.chunk) {
+                accumulatedResponse += data.chunk;
+                setMessages((prev) => 
+                  prev.map((msg) => 
+                    msg.id === botMessageId ? { ...msg, text: accumulatedResponse } : msg
+                  )
+                );
+              } else if (data.final) {
+                setMessages((prev) => 
+                  prev.map((msg) => 
+                    msg.id === botMessageId ? { ...msg, debugInfo: data.final.debug_info || data.final.metrics || null } : msg
+                  )
+                );
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
+            } catch (e) {
+              console.error("Stream parse error", e, line);
+            }
+          }
+        }
       }
     } catch (err) {
       console.error(err);
@@ -483,6 +510,10 @@ function App() {
       "Thanks": "bg-green-950/40 text-green-300 border-green-500/30",
       "Small Talk": "bg-fuchsia-950/40 text-fuchsia-300 border-fuchsia-500/30",
     };
+
+    if (["Unknown", "Unknown Query", "UNKNOWN QUERY"].includes(label)) {
+      return null;
+    }
 
     const colorClass =
       colors[label] || "bg-slate-850 text-slate-300 border-slate-700";
@@ -719,7 +750,7 @@ function App() {
              {chatMode !== "fullscreen" && <LandingPage />}
              {/* Widget container */}
              <div className={`${
-                 chatMode === "fullscreen" ? "relative flex-1 h-full w-full flex flex-col overflow-hidden bg-slate-950" : chatMode === "widget" ? "absolute transition-all duration-300 flex flex-col overflow-hidden bg-slate-950 shadow-[0_8px_40px_rgb(0,0,0,0.4)] bottom-6 right-6 w-[400px] h-[650px] rounded-2xl z-50 border border-slate-700/50" : "absolute transition-all duration-300 flex flex-col overflow-hidden bg-blue-600 shadow-[0_8px_30px_rgb(37,99,235,0.4)] bottom-6 right-6 w-16 h-16 rounded-full cursor-pointer hover:scale-105 z-50 border-none"
+                 chatMode === "fullscreen" ? "relative flex-1 h-full w-full flex flex-col overflow-hidden bg-slate-900" : chatMode === "widget" ? "absolute transition-all duration-300 flex flex-col overflow-hidden bg-slate-900 shadow-[0_8px_40px_rgb(0,0,0,0.4)] bottom-6 right-6 w-[400px] h-[650px] rounded-2xl z-50 border border-slate-700/50" : "absolute transition-all duration-300 flex flex-col overflow-hidden bg-blue-600 shadow-[0_8px_30px_rgb(37,99,235,0.4)] bottom-6 right-6 w-16 h-16 rounded-full cursor-pointer hover:scale-105 z-50 border-none"
              }`}>
                 {chatMode === "collapsed" ? (
                    <button onClick={() => setChatMode("widget")} className="w-full h-full rounded-full flex items-center justify-center relative overflow-hidden group border-2 border-white/20 bg-white shadow-inner hover:shadow-[0_0_20px_rgba(37,99,235,0.6)] transition-all duration-300">
@@ -761,7 +792,7 @@ function App() {
                      </header>
                      )}
                      {/* Chat Pane */}
-                     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950 relative">
+                     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900 relative">
               <div
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
@@ -881,33 +912,22 @@ function App() {
                               getIntentBadge(msg.debugInfo.intent, msg.debugInfo.displayIntent)}
                           </div>
 
-                          <div className="text-sm leading-relaxed text-slate-200 max-w-full overflow-hidden">
-                            <ReactMarkdown
-                              components={{
-                                p: ({node, ...props}) => <p className="mb-4 last:mb-0" {...props} />,
-                                strong: ({node, ...props}) => <strong className="font-bold text-white" {...props} />,
-                                ul: ({node, ...props}) => <ul className="list-disc list-inside mb-4 space-y-1" {...props} />,
-                                ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-4 space-y-1" {...props} />,
-                                li: ({node, ...props}) => <li className="pl-1" {...props} />,
-                                a: ({node, ...props}) => <a className="text-indigo-400 hover:text-indigo-300 underline" {...props} />,
-                                h1: ({node, ...props}) => <h1 className="font-bold text-white text-xl mb-2 mt-4" {...props} />,
-                                h2: ({node, ...props}) => <h2 className="font-bold text-white text-lg mb-2 mt-4" {...props} />,
-                                h3: ({node, ...props}) => <h3 className="font-bold text-white text-base mb-2 mt-4" {...props} />,
-                                h4: ({node, ...props}) => <h4 className="font-bold text-white text-sm mb-2 mt-4" {...props} />,
-                                pre: ({node, ...props}) => <pre className="bg-slate-900 p-3 rounded-lg overflow-x-auto mb-4 border border-slate-700/50 text-slate-300 text-sm font-mono [&>code]:bg-transparent [&>code]:text-inherit [&>code]:p-0" {...props} />,
-                                code: ({node, className, ...props}) => <code className={`${className || ''} bg-slate-800 text-indigo-300 px-1.5 py-0.5 rounded text-[0.8em] font-mono`} {...props} />,
-                                blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-indigo-500 pl-4 italic text-slate-400 mb-4" {...props} />,
-                                table: ({node, ...props}) => <div className="overflow-x-auto mb-4"><table className="w-full border-collapse" {...props} /></div>,
-                                th: ({node, ...props}) => <th className="border border-slate-700 bg-slate-800 px-3 py-2 text-left font-semibold text-slate-200" {...props} />,
-                                td: ({node, ...props}) => <td className="border border-slate-700 px-3 py-2 text-left text-slate-300" {...props} />
-                              }}
-                            >
-                              {msg.text}
-                            </ReactMarkdown>
+                          <div className={`prose max-w-none leading-relaxed text-[15px] space-y-4 antialiased selection:bg-indigo-500/30 p-4 rounded-xl shadow-md border ${msg.sender === "user" ? "bg-indigo-600 border-indigo-500 text-white prose-p:text-white prose-strong:text-white prose-headings:text-white" : "bg-slate-800 border-slate-700 text-gray-200 prose-invert"}`}>
+                            {msg.sender === "bot" && loading && idx === messages.length - 1 && !msg.text ? (
+                                <div className="flex items-center space-x-1.5 h-6">
+                                  <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                                  <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                                  <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                                </div>
+                            ) : (
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {msg.text}
+                                </ReactMarkdown>
+                            )}
                           </div>
 
                           {/* Bot Actions Panel on hover */}
-                          {msg.sender === "bot" && (
+                          {msg.sender === "bot" && (!loading || idx < messages.length - 1) && (
                             <div className="pt-2 flex items-center gap-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                               {/* Copy Button */}
                               <button
@@ -1016,44 +1036,7 @@ function App() {
                   </div>
                 )}
 
-                {loading && (
-                  <div className="max-w-3xl mx-auto flex gap-4 w-full">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/60 flex items-center justify-center">
-                      <svg
-                        className="w-4 h-4 text-indigo-400 animate-spin"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 3.89M9 11l3-3m0 0l3 3m-3-3v8"
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <span className="text-[10px] text-slate-500 font-bold">
-                        Mobiloitte is thinking...
-                      </span>
-                      <div className="bg-slate-900/65 text-slate-400 border border-slate-800/80 rounded-lg px-4.5 py-3 shadow-inner flex items-center gap-2.5 w-16">
-                        <span
-                          className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        />
-                        <span
-                          className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        />
-                        <span
-                          className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {/* Loader is now rendered inside the bot bubble above to fix layout alignment */}
 
                 {error && (
                   <div className="bg-red-950/20 border border-red-500/25 text-red-300 text-xs px-4 py-3 rounded-lg text-center max-w-md mx-auto shadow-lg shadow-red-950/10">

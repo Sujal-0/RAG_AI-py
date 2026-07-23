@@ -44,6 +44,7 @@ async def _reindex_version(version_id: uuid.UUID, filename: str) -> dict[str, An
     start = time.time()
     result = {"version_id": str(version_id), "filename": filename, "status": "success"}
 
+    from app.database.session import async_session
     async with async_session() as session:
         try:
             # 1. Load version
@@ -148,10 +149,12 @@ async def _reindex_all_documents() -> dict[str, Any]:
     """Re-index all documents that were embedded with a different model."""
     from sqlalchemy import select
     from app.database.models import Document, DocumentVersion
+    from app.database.session import get_engine
 
     results = []
     total_start = time.time()
-
+    
+    from app.database.session import async_session
     async with async_session() as session:
         # Find all versions that need re-indexing
         stmt = (
@@ -222,6 +225,8 @@ async def reindex_status_endpoint() -> dict[str, Any]:
 
     outdated_count = 0
     total_count = 0
+    
+    from app.database.session import async_session
     async with async_session() as session:
         stmt = select(func.count()).select_from(DocumentVersion).where(
             DocumentVersion.status == "ready_for_search"

@@ -37,8 +37,10 @@ class DenseRetriever:
         )
 
         try:
-            # 1. Generate query embedding
-            query_vector = EmbeddingService.generate_embedding(query)
+            import asyncio
+            print("Before asyncio.to_thread in DenseRetriever")
+            query_vector = await asyncio.to_thread(EmbeddingService.generate_embedding, query)
+            print("After asyncio.to_thread in DenseRetriever")
             
             # 2. Vector distance (Cosine distance in pgvector is <=> )
             # We want to order by cosine distance ascending (closest first)
@@ -56,6 +58,8 @@ class DenseRetriever:
             res = await session.execute(stmt)
             results = []
             
+            # Convert distance to similarity (1 - distance)
+            # Since OpenAI / MiniLM uses cosine similarity directly, we invert the pgvector distance
             for chunk, dist in res.all():
                 similarity = 1.0 - float(dist)
                 results.append({

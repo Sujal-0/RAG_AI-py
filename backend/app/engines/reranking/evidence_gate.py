@@ -73,6 +73,9 @@ class EvidenceGate:
                 "final_count": len(final_list)
             }
         )
+        
+        if not final_list:
+            raise ValueError("InsufficientEvidenceError")
 
         return final_list
 

@@ -19,6 +19,7 @@ Your ONLY job is to take the provided Extractive Draft and polish the grammar, r
 DO NOT ADD ANY NEW FACTS.
 DO NOT HALLUCINATE.
 DO NOT REMOVE CITATIONS.
+NEVER include entire document chunks, full texts, or full paragraphs. Only use the selected evidence in the draft.
 You must strictly follow the provided Formatting Instructions."""
 
     @classmethod
@@ -28,7 +29,12 @@ You must strictly follow the provided Formatting Instructions."""
         
         formatting_rules = f"Format the output as a {plan.format_type}.\n"
         if plan.sections:
-            formatting_rules += f"Include the following sections: {', '.join(plan.sections)}."
+            formatting_rules += f"Include the following sections: {', '.join(plan.sections)}.\n"
+            
+        formatting_rules += f"STRICT CONSTRAINT: The absolute maximum length is {plan.max_words} words. Do not exceed this limit.\n"
+        
+        if getattr(plan, "greeting_matched", False):
+            formatting_rules += "The user started their request with a greeting. You MUST start your response with a polite greeting (e.g., 'Hello!', 'Hi there!').\n"
             
         return PromptBundle(
             system_prompt=cls.SYSTEM_PROMPT,

@@ -110,6 +110,17 @@ class DocumentRepository:
                 embedding_model=embedding_model,
                 embedding_dimension=len(vector),
                 embedding_timestamp=datetime.now(UTC),
+                chunk_metadata={
+                    "document_id": str(version_id),
+                    "page_number": chunk.page_number,
+                    "section_title": chunk.section or "Unknown Section",
+                    "document_name": getattr(chunk, "document_name", None),
+                    "parent_section": getattr(chunk, "parent_section", None),
+                    "section": chunk.section,
+                    "child_section": getattr(chunk, "child_section", None),
+                    "subsection": getattr(chunk, "subsection", None),
+                    "heading": chunk.heading
+                }
             )
             session.add(db_chunk)
         await session.flush()

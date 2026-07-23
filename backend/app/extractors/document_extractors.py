@@ -8,7 +8,17 @@ from typing import Any
 
 import docx
 import pypdf
+import re
 from pydantic import BaseModel, Field
+
+def sanitize_extracted_text(raw_text: str) -> str:
+    # Strip out standalone page numbers (e.g., "Page 1", "Page 23")
+    cleaned = re.sub(r'(?im)^Page\s+\d+\s*$', '', raw_text)
+    # Remove rogue structural artifacts or excessive dots
+    cleaned = re.sub(r'\.{4,}', '...', cleaned)
+    # Replace 3 or more consecutive newlines with a clean double newline
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 
 class ExtractionResult(BaseModel):
@@ -69,14 +79,27 @@ class PDFExtractor(BaseExtractor):
                 
             title = metadata.get("title", filename)
             
+            try:
+                from langchain_text_splitters import RecursiveCharacterTextSplitter
+            except ImportError:
+                from langchain.text_splitter import RecursiveCharacterTextSplitter
+                
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=800,
+                chunk_overlap=150,
+                separators=["\n\n", "\n", ".", " ", ""]
+            )
+            
             # Extract page by page to preserve pagination for chunks
             for page_num in range(len(doc)):
                 try:
                     page_md = pymupdf4llm.to_markdown(doc=doc, pages=[page_num])
                     pages.append(page_md)
                     
-                    page_paras = [p.strip() for p in page_md.split("\n\n") if p.strip()]
-                    paragraphs.extend(page_paras)
+                    if page_md.strip():
+                        sanitized_text = sanitize_extracted_text(page_md)
+                        page_paras = text_splitter.split_text(sanitized_text)
+                        paragraphs.extend([p.strip() for p in page_paras if p.strip()])
                 except Exception as e:
                     logger.warning(f"Failed to parse page {page_num} using pymupdf4llm: {e}")
                     pages.append("")
@@ -90,8 +113,9 @@ class PDFExtractor(BaseExtractor):
                 statistics=stats,
             )
             
-        except ImportError:
-            logger.warning("PyMuPDF4LLM not installed. Falling back to legacy PyPDF extractor.")
+        except Exception as e:
+            print(f"PyMuPDF4LLM IMPORT ERROR: {type(e).__name__} - {e}")
+            logger.warning(f"PyMuPDF4LLM not installed or failed to import. Falling back to legacy PyPDF extractor. Error: {str(e)}")
             # Fallback to PyPDF
             import io
             import pypdf
@@ -111,13 +135,26 @@ class PDFExtractor(BaseExtractor):
 
             title = metadata.get("Title", filename)
 
+            try:
+                from langchain_text_splitters import RecursiveCharacterTextSplitter
+            except ImportError:
+                from langchain.text_splitter import RecursiveCharacterTextSplitter
+                
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=800,
+                chunk_overlap=150,
+                separators=["\n\n", "\n", ".", " ", ""]
+            )
+
             for page_num in range(len(reader.pages)):
                 page = reader.pages[page_num]
                 text = page.extract_text() or ""
                 pages.append(text)
 
-                page_paras = [p.strip() for p in text.split("\n\n") if p.strip()]
-                paragraphs.extend(page_paras)
+                if text.strip():
+                    sanitized_text = sanitize_extracted_text(text)
+                    page_paras = text_splitter.split_text(sanitized_text)
+                    paragraphs.extend([p.strip() for p in page_paras if p.strip()])
 
             stats = cls._compute_stats(pages, paragraphs)
             return ExtractionResult(
